@@ -1,61 +1,15 @@
 import Discord from "discord.js"
-import fs from "node:fs"
+import _ from "lodash"
 
 import dayjs from "dayjs"
 import weekday from "dayjs/plugin/weekday.js"
 import timezone from "dayjs/plugin/timezone.js"
-import _ from "lodash"
 dayjs.extend(weekday)
 dayjs.extend(timezone)
 
 dayjs.tz.setDefault("Asia/Hong_Kong")
 
-const MATCH_PATH = "./data/match.json"
-
-class MatchState {
-  #messageId: Discord.Snowflake = ""
-  #closeTime: number = 0
-
-  #saveObject = {
-    closeTime: this.#closeTime,
-    messageId: this.#messageId
-  }
-
-  constructor() {
-    if (fs.existsSync(MATCH_PATH)) {
-      const matchData = JSON.parse(fs.readFileSync(MATCH_PATH).toString())
-
-      if (_.isString(matchData.messageId) && _.isNumber(matchData.closeTime)) {
-        this.#messageId = matchData.messageId
-        this.#closeTime = matchData.closeTime
-      }
-    }
-  }
-
-  private write() {
-    fs.writeFileSync(MATCH_PATH, JSON.stringify(this.#saveObject))
-  }
-
-  get closeTime() {
-    return this.#closeTime
-  }
-
-  set closeTime(time: number) {
-    this.#closeTime = time
-    this.write()
-  }
-
-  get messageId() {
-    return this.#messageId
-  }
-
-  set messageId(id: Discord.Snowflake) {
-    this.#messageId = id
-    this.write()
-  }
-}
-
-const state = new MatchState()
+import db from "../db.js"
 
 export const matchCommands: Discord.ApplicationCommandData[] = [
   {
@@ -74,38 +28,22 @@ async function sendStartMatchMessage(
   interaction: Discord.CommandInteraction | Discord.ButtonInteraction,
   force = false
 ) {
-  if (state.messageId == "" || force) {
-    if (force && interaction.isButton()) {
-      const message = await interaction.channel?.messages?.fetch(
-        interaction.message.id
-      )
-
-      if (message) {
-        await message.edit({
-          content:
-            "Another match message is active. Are you sure you want to send a new one?",
-          components: [
-            {
-              type: "ACTION_ROW",
-              components: [
-                {
-                  type: "BUTTON",
-                  label: "Yes, send a new one",
-                  style: "DANGER",
-                  customId: "force_send_new_match",
-                  disabled: true
-                }
-              ]
-            }
-          ]
-        })
-      }
+  if ((db.data && db.data.messageId == "") || force) {
+    if (!db.data) {
+      throw new Error("db data is null!")
     }
 
-    await interaction.reply({
-      content: "Sending match message to the channel now",
-      ephemeral: true
-    })
+    if (force && interaction.isButton()) {
+      await interaction.update({
+        content: "I have sent a new match message.",
+        components: []
+      })
+    } else {
+      await interaction.reply({
+        content: "Sending match message to the channel now",
+        ephemeral: true
+      })
+    }
 
     const postDate = dayjs()
       .add(7, "day")
@@ -118,16 +56,20 @@ async function sendStartMatchMessage(
       content: "Hi everybody, want to meet somebody new this week?",
       embeds: [
         {
-          type: "rich",
           title: "Weekly Design Match",
-          description: `React with a 👋 to be matched with somebody for this week's design match.\nMatches will be posted on <t:${postDate.unix()}:F>`,
+          description:
+            Discord.Formatters.bold(
+              "React with a 👋 to be matched with somebody for this week's design match."
+            ) + `\n\nMatches will be posted on <t:${postDate.unix()}:F>`,
           color: 0xff31f8
         }
       ]
     })
 
-    state.closeTime = postDate.unix()
-    state.messageId = matchMessage?.id ?? ""
+    db.data.closeTime = postDate.unix()
+    db.data.messageId = matchMessage?.id ?? ""
+
+    await db.write()
   } else {
     await interaction.reply({
       content:
