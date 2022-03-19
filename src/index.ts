@@ -34,7 +34,7 @@ async function registerCommands(guild: Discord.Guild, modRoleId: string) {
 }
 
 async function init() {
-  const { TOKEN, GUILD_ID, MOD_ROLE_ID } = getConfig()
+  const { TOKEN, GUILD_ID, MOD_ROLE_ID, MATCH_CHANNEL_ID } = getConfig()
 
   const client = new Discord.Client({
     intents: ["GUILDS", "GUILD_INTEGRATIONS", "GUILD_MESSAGE_REACTIONS"]
@@ -47,7 +47,7 @@ async function init() {
 
   await registerCommands(guild, MOD_ROLE_ID)
 
-  match(client)
+  match(client, MATCH_CHANNEL_ID)
 }
 
 void init()

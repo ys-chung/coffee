@@ -1,13 +1,13 @@
 {
-    "extends": "@tsconfig/node16/tsconfig.json",
-    "compilerOptions": {
-        "outDir": "dist",
-        "strict": true,
-        "lib": [ "ES2021" ],
-        "module": "esnext",
-        "moduleResolution": "node",
-        "allowSyntheticDefaultImports": true,
-        "allowUnreachableCode": false
-    },
-    "include": ["src/**/*"]
+  "extends": "@tsconfig/node16/tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "strict": true,
+    "lib": ["ESNext"],
+    "module": "esnext",
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "allowUnreachableCode": false
+  },
+  "include": ["src/**/*"]
 }
