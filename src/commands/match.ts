@@ -161,6 +161,22 @@ async function deactivateMessage(message: Discord.Message) {
   })
 }
 
+async function matchRoutine(channel: Discord.TextBasedChannel) {
+  const closeTime =
+    dayjs().day() < 2
+      ? dayjs().weekday(2).hour(9).minute(0).second(0).unix()
+      : dayjs().add(7, "day").weekday(2).hour(9).minute(0).second(0).unix()
+
+  // Send message
+  const message = await sendMatch(closeTime, channel)
+
+  // Set new message id
+  await setMessageId(message.id)
+
+  // Set time
+  await setTime(closeTime)
+}
+
 async function resultRoutine(channel: Discord.TextBasedChannel) {
   const oldMessage = await fetchMessage(channel, getMessageId())
 
@@ -200,13 +216,7 @@ async function weeklyCommand(interaction: Discord.CommandInteraction) {
     // Send message
     if (!interaction.channel) throw new Error("Interaction has no channel!")
 
-    const message = await sendMatch(closeTime, interaction.channel)
-
-    // Set new message id
-    await setMessageId(message.id)
-
-    // Set time
-    await setTime(closeTime)
+    await matchRoutine(interaction.channel)
   } else {
     await prompt(
       interaction,
@@ -268,14 +278,7 @@ async function sendNewMessage(
     .second(0)
     .unix()
 
-  // Send message
-  const message = await sendMatch(closeTime, channel)
-
-  // Set new message id
-  await setMessageId(message.id)
-
-  // Set time
-  await setTime(closeTime)
+  await matchRoutine(channel)
 }
 
 async function sendResultsEarly(
