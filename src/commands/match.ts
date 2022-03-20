@@ -204,15 +204,6 @@ async function weeklyCommand(interaction: Discord.CommandInteraction) {
       ephemeral: true
     })
 
-    // Set time
-    const closeTime = dayjs()
-      .add(7, "day")
-      .weekday(2)
-      .hour(9)
-      .minute(0)
-      .second(0)
-      .unix()
-
     // Send message
     if (!interaction.channel) throw new Error("Interaction has no channel!")
 
@@ -268,15 +259,6 @@ async function sendNewMessage(
 
   // Deactivate old message
   await deactivateMessage(oldMessage)
-
-  // Calculate time
-  const closeTime = dayjs()
-    .add(7, "day")
-    .weekday(2)
-    .hour(9)
-    .minute(0)
-    .second(0)
-    .unix()
 
   await matchRoutine(channel)
 }
