@@ -3,9 +3,11 @@ import _ from "lodash"
 
 import dayjs from "dayjs"
 import weekday from "dayjs/plugin/weekday.js"
+import utc from "dayjs/plugin/utc.js"
 import timezone from "dayjs/plugin/timezone.js"
 import duration from "dayjs/plugin/duration.js"
 dayjs.extend(weekday)
+dayjs.extend(utc)
 dayjs.extend(timezone)
 dayjs.extend(duration)
 
@@ -82,17 +84,6 @@ async function fetchChannel(client: Discord.Client, id: Discord.Snowflake) {
   return channel
 }
 
-async function fetchMessage(
-  channel: Discord.TextBasedChannel,
-  messageId: string
-) {
-  const message = await channel.messages.fetch(messageId)
-
-  if (!message) throw new Error("Message not found")
-
-  return message
-}
-
 async function getMessageReactionUserIds(
   message: Discord.Message,
   emojiName: string
@@ -101,7 +92,7 @@ async function getMessageReactionUserIds(
     .find((reaction) => reaction.emoji.name === emojiName)
     ?.users?.fetch()
 
-  if (reactionUsers) {
+  if (reactionUsers && reactionUsers.size > 1) {
     return Array.from(reactionUsers.values()).map((user) => user.id)
   } else {
     return []
@@ -132,7 +123,9 @@ async function sendResults(
     type: "conjunction"
   })
 
-  const content = pairs.map((pair) => formatter.format(pair)).join("\n")
+  const content =
+    "This week's matches are:\n" +
+    pairs.map((pair) => formatter.format(pair)).join("\n")
 
   // Send matches
   return await channel.send(content)
@@ -161,11 +154,17 @@ async function deactivateMessage(message: Discord.Message) {
   })
 }
 
-async function matchRoutine(channel: Discord.TextBasedChannel) {
-  const closeTime =
-    dayjs().day() < 2
-      ? dayjs().weekday(2).hour(9).minute(0).second(0).unix()
-      : dayjs().add(7, "day").weekday(2).hour(9).minute(0).second(0).unix()
+async function matchRoutine(
+  channel: Discord.TextBasedChannel,
+  customTime?: number
+) {
+  let time = dayjs().tz("Asia/Hong_Kong").weekday(2).hour(9).minute(0).second(0)
+
+  if (dayjs().tz("Asia/Hong_Kong").day() < 2) {
+    time = time.add(7, "day")
+  }
+
+  const closeTime = customTime ?? time.unix()
 
   // Send message
   const message = await sendMatch(closeTime, channel)
@@ -178,7 +177,12 @@ async function matchRoutine(channel: Discord.TextBasedChannel) {
 }
 
 async function resultRoutine(channel: Discord.TextBasedChannel) {
-  const oldMessage = await fetchMessage(channel, getMessageId())
+  let oldMessage
+  try {
+    oldMessage = await channel.messages.fetch(getMessageId())
+  } catch (e) {
+    throw new Error("The match message cannot be found.")
+  }
 
   // Get reactions and send results
   await sendResults(channel, oldMessage)
@@ -197,8 +201,19 @@ async function resultRoutine(channel: Discord.TextBasedChannel) {
 
 async function weeklyCommand(interaction: Discord.CommandInteraction) {
   const messageId = getMessageId()
+  const customTime = interaction.options.get("time")?.value
 
   if (messageId === "") {
+    if (customTime) {
+      await prompt(
+        interaction,
+        `Do you want to close the match at <t:${customTime}:F>?`,
+        `force_send_new_match:${customTime}`
+      )
+
+      return
+    }
+
     await interaction.reply({
       content: "Sending match message to the channel now",
       ephemeral: true
@@ -211,8 +226,10 @@ async function weeklyCommand(interaction: Discord.CommandInteraction) {
   } else {
     await prompt(
       interaction,
-      "Are you sure you want to replace the existing match message with a new one?",
-      "force_send_new_match"
+      `Are you sure you want to replace the existing match message with a new one${
+        customTime ? `, scheduled to close at <t:${customTime}:F>` : ""
+      }?`,
+      `force_send_new_match${customTime ? `:${customTime}` : ""}`
     )
   }
 }
@@ -236,11 +253,25 @@ async function matchCommand(interaction: Discord.CommandInteraction) {
   }
 }
 
+async function clearMatchCommand(interaction: Discord.CommandInteraction) {
+  await setMessageId("")
+  await setTime(0)
+
+  await interaction.reply({
+    content: "The match details have been cleared.",
+    ephemeral: true
+  })
+}
+
 async function checkIfTime(channel: Discord.TextBasedChannel) {
   const closeTime = getTime()
 
   if (closeTime !== 0 && dayjs().unix() > closeTime) {
-    await resultRoutine(channel)
+    try {
+      await resultRoutine(channel)
+    } catch (error) {
+      console.error("Failed to send results (timer). ", error)
+    }
   }
 }
 
@@ -248,19 +279,34 @@ async function checkIfTime(channel: Discord.TextBasedChannel) {
 
 async function sendNewMessage(
   interaction: Discord.ButtonInteraction,
-  channel: Discord.TextBasedChannel
+  channel: Discord.TextBasedChannel,
+  time?: string
 ) {
   await interaction.update({
     content: "I have sent a new match message.",
     components: []
   })
 
-  const oldMessage = await fetchMessage(channel, getMessageId())
+  try {
+    const oldMessageId = getMessageId()
+    if (oldMessageId !== "") {
+      const oldMessage = await channel.messages.fetch(getMessageId())
 
-  // Deactivate old message
-  await deactivateMessage(oldMessage)
+      // Deactivate old message
+      await deactivateMessage(oldMessage)
+    }
 
-  await matchRoutine(channel)
+    await matchRoutine(channel, time ? parseInt(time) : undefined)
+  } catch (error) {
+    console.error(error)
+
+    await interaction.editReply({
+      content: `Failed to send new match message. ${
+        error instanceof Error ? `Error: ${error.message}` : ""
+      }`,
+      components: []
+    })
+  }
 }
 
 async function sendResultsEarly(
@@ -272,7 +318,18 @@ async function sendResultsEarly(
     components: []
   })
 
-  await resultRoutine(channel)
+  try {
+    await resultRoutine(channel)
+  } catch (error) {
+    console.error(error)
+
+    await interaction.editReply({
+      content: `Failed to send results. ${
+        error instanceof Error ? `Error: ${error.message}` : ""
+      }`,
+      components: []
+    })
+  }
 }
 
 /* Exports */
@@ -292,13 +349,21 @@ export async function match(client: Discord.Client, channelId: string) {
         case "match":
           matchCommand(interaction)
           break
+
+        case "clearmatch":
+          clearMatchCommand(interaction)
+          break
       }
     }
 
     if (interaction.isButton()) {
-      switch (interaction.customId) {
+      switch (interaction.customId.split(":")[0]) {
         case "force_send_new_match":
-          sendNewMessage(interaction, channel)
+          sendNewMessage(
+            interaction,
+            channel,
+            interaction.customId.split(":")[1]
+          )
           break
 
         case "force_send_result":
@@ -320,11 +385,24 @@ export const matchCommands: Discord.ApplicationCommandData[] = [
   {
     name: "weekly",
     description: "Send a message asking people to match",
-    defaultPermission: false
+    defaultPermission: false,
+    options: [
+      {
+        type: "INTEGER",
+        name: "time",
+        description: "The unix timestamp (in seconds) of the closing time",
+        required: false
+      }
+    ]
   },
   {
     name: "match",
     description: "Match people now",
+    defaultPermission: false
+  },
+  {
+    name: "clearmatch",
+    description: "Reset match details",
     defaultPermission: false
   }
 ]
