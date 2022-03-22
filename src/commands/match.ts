@@ -377,7 +377,7 @@ export async function match(client: Discord.Client, channelId: string) {
 
   setInterval(
     () => checkIfTime(channel),
-    dayjs.duration({ minutes: 5 }).milliseconds()
+    dayjs.duration({ minutes: 5 }).asMilliseconds()
   )
 }
 
