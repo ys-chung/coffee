@@ -158,9 +158,9 @@ async function matchRoutine(
   channel: Discord.TextBasedChannel,
   customTime?: number
 ) {
-  let time = dayjs().tz("Asia/Hong_Kong").weekday(2).hour(9).minute(0).second(0)
+  let time = dayjs().tz("Asia/Hong_Kong").weekday(1).hour(9).minute(0).second(0)
 
-  if (dayjs().tz("Asia/Hong_Kong").day() < 2) {
+  if (dayjs().tz("Asia/Hong_Kong").day() > 1) {
     time = time.add(7, "day")
   }
 
@@ -264,9 +264,13 @@ async function clearMatchCommand(interaction: Discord.CommandInteraction) {
 }
 
 async function checkIfTime(channel: Discord.TextBasedChannel) {
+  console.log("Checking if time is up...")
+
   const closeTime = getTime()
 
   if (closeTime !== 0 && dayjs().unix() > closeTime) {
+    console.log("Time's up! Sending results.")
+
     try {
       await resultRoutine(channel)
     } catch (error) {
