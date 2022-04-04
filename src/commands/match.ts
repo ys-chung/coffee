@@ -6,51 +6,16 @@ import weekday from "dayjs/plugin/weekday.js"
 import utc from "dayjs/plugin/utc.js"
 import timezone from "dayjs/plugin/timezone.js"
 import duration from "dayjs/plugin/duration.js"
+import weekOfYear from "dayjs/plugin/weekOfYear.js"
 dayjs.extend(weekday)
 dayjs.extend(utc)
 dayjs.extend(timezone)
 dayjs.extend(duration)
+dayjs.extend(weekOfYear)
 
-import db from "../db.js"
+import { getDb, setDb } from "../db.js"
 
 /* Helper functions */
-
-function getTime() {
-  if (db.data) {
-    return db.data.closeTime
-  } else {
-    throw new Error("Db data not initialised")
-  }
-}
-
-async function setTime(time: number) {
-  if (db.data) {
-    db.data.closeTime = time
-    await db.write()
-    return getTime()
-  } else {
-    throw new Error("Db data not initialised")
-  }
-}
-
-function getMessageId() {
-  if (db.data) {
-    return db.data.messageId
-  } else {
-    throw new Error("Db data not initialised")
-  }
-}
-
-async function setMessageId(messageId: string) {
-  if (db.data) {
-    db.data.messageId = messageId
-    await db.write()
-    return getMessageId()
-  } else {
-    throw new Error("Db data not initialised")
-  }
-}
-
 async function prompt(
   interaction: Discord.CommandInteraction,
   content: string,
@@ -81,7 +46,7 @@ async function fetchChannel(client: Discord.Client, id: Discord.Snowflake) {
   if (!channel || !channel.isText())
     throw new Error("Fetched channel is not a text channel!")
 
-  return channel
+  return channel as Discord.GuildTextBasedChannel
 }
 
 async function getMessageReactionUserIds(
@@ -99,14 +64,98 @@ async function getMessageReactionUserIds(
   }
 }
 
+async function createChannels(
+  guild: Discord.Guild,
+  everyoneRoleId: string,
+  pairs: string[][],
+  formatter: Intl.ListFormat,
+  time: number
+) {
+  const weekNumber = dayjs().week()
+
+  const channelIds = []
+
+  for (let i = 0; i < pairs.length; i++) {
+    const pair = pairs[i]
+
+    const overwrites: Discord.OverwriteData[] = pair.map((val) => ({
+      id: val,
+      type: "member",
+      allow: ["SEND_MESSAGES", "VIEW_CHANNEL"]
+    }))
+
+    const channel = await guild.channels.create(
+      `week-${weekNumber}-match-${i + 1}`,
+      {
+        parent: "960369276445929482",
+        type: "GUILD_TEXT",
+        permissionOverwrites: [
+          { id: everyoneRoleId, type: "role", deny: "VIEW_CHANNEL" },
+          {
+            id: guild.client.user?.id ?? "",
+            type: "member",
+            allow: ["VIEW_CHANNEL", "SEND_MESSAGES"]
+          },
+          ...overwrites
+        ]
+      }
+    )
+
+    channelIds.push(channel.id)
+
+    await channel.send(
+      "Hello, " +
+        formatter.format(pair.map((id) => `<@${id}>`)) +
+        ", you have been paired this week! 👋\n" +
+        "Just chat, get to know each other or pick a time to meet digitally! 🤩\n\n" +
+        `This is your private channel. 👯 Please note it will be deleted on <t:${time}:F>!`
+    )
+  }
+
+  return channelIds
+}
+
+async function remindChannels(discord: Discord.Client) {
+  const channels = getDb("openChannels")
+  const deleteChannelsTime = getDb("deleteChannelsTime")
+
+  for (const channelId of channels) {
+    const channel = await discord.channels.fetch(channelId)
+
+    if (!channel || !channel.isText()) continue
+
+    await channel.send(
+      `**⚠️ This channel will be deleted on <t:${deleteChannelsTime}:F>!**
+If you wish to continue talking afterwards, feel free to do so in other channels of the server, or in direct messages!`
+    )
+  }
+
+  await setDb("remindChannelsTime", 0)
+}
+
+async function deleteChannels(discord: Discord.Client) {
+  const channels = getDb("openChannels")
+
+  for (const channelId of channels) {
+    const channel = await discord.channels.fetch(channelId)
+
+    if (!channel) continue
+
+    await channel.delete("Match time up")
+  }
+
+  await setDb("openChannels", [])
+  await setDb("deleteChannelsTime", 0)
+}
+
 async function sendResults(
-  channel: Discord.TextBasedChannel,
-  oldMessage: Discord.Message
+  channel: Discord.GuildTextBasedChannel,
+  oldMessage: Discord.Message,
+  everyoneRoleId: string,
+  deleteChannelsTime: number
 ) {
   // Fetch match message reaction users
-  const people = (await getMessageReactionUserIds(oldMessage, "👋")).map(
-    (id) => `<@${id}>`
-  )
+  const people = await getMessageReactionUserIds(oldMessage, "👋")
 
   if (people.length === 0) return null
 
@@ -125,10 +174,23 @@ async function sendResults(
 
   const content =
     "This week's matches are:\n" +
-    pairs.map((pair) => formatter.format(pair)).join("\n")
+    pairs
+      .map((pair) => formatter.format(pair.map((id) => `<@${id}>`)))
+      .join("\n")
 
   // Send matches
-  return await channel.send(content)
+  await channel.send(content)
+
+  // Create channels
+  const channelIds = await createChannels(
+    channel.guild,
+    everyoneRoleId,
+    pairs,
+    formatter,
+    deleteChannelsTime
+  )
+
+  return channelIds
 }
 
 async function sendMatch(time: number, channel: Discord.TextBasedChannel) {
@@ -170,37 +232,52 @@ async function matchRoutine(
   const message = await sendMatch(closeTime, channel)
 
   // Set new message id
-  await setMessageId(message.id)
+  await setDb("messageId", message.id)
 
   // Set time
-  await setTime(closeTime)
+  await setDb("closeTime", closeTime)
 }
 
-async function resultRoutine(channel: Discord.TextBasedChannel) {
+async function resultRoutine(
+  channel: Discord.GuildTextBasedChannel,
+  everyoneRoleId: string
+) {
   let oldMessage
   try {
-    oldMessage = await channel.messages.fetch(getMessageId())
+    oldMessage = await channel.messages.fetch(getDb("messageId"))
   } catch (e) {
     throw new Error("The match message cannot be found.")
   }
 
   // Get reactions and send results
-  await sendResults(channel, oldMessage)
+  const deleteChannelsTime = dayjs().add(7, "day").unix()
+  const channelIds = await sendResults(
+    channel,
+    oldMessage,
+    everyoneRoleId,
+    deleteChannelsTime
+  )
+
+  if (channelIds) {
+    await setDb("openChannels", channelIds)
+    await setDb("deleteChannelsTime", deleteChannelsTime)
+    await setDb("remindChannelsTime", dayjs().add(6, "day").unix())
+  }
 
   // Deactivate old message
   await deactivateMessage(oldMessage)
 
   // Delete message id
-  await setMessageId("")
+  await setDb("messageId", "")
 
   // Delete time
-  await setTime(0)
+  await setDb("closeTime", 0)
 }
 
 /* Slash commands */
 
 async function weeklyCommand(interaction: Discord.CommandInteraction) {
-  const messageId = getMessageId()
+  const messageId = getDb("messageId")
   const customTime = interaction.options.get("time")?.value
 
   if (messageId === "") {
@@ -235,10 +312,10 @@ async function weeklyCommand(interaction: Discord.CommandInteraction) {
 }
 
 async function matchCommand(interaction: Discord.CommandInteraction) {
-  const messageId = getMessageId()
+  const messageId = getDb("messageId")
 
   if (messageId !== "") {
-    const time = getTime()
+    const time = getDb("closeTime")
 
     await prompt(
       interaction,
@@ -254,8 +331,8 @@ async function matchCommand(interaction: Discord.CommandInteraction) {
 }
 
 async function clearMatchCommand(interaction: Discord.CommandInteraction) {
-  await setMessageId("")
-  await setTime(0)
+  await setDb("messageId", "")
+  await setDb("closeTime", 0)
 
   await interaction.reply({
     content: "The match details have been cleared.",
@@ -263,16 +340,46 @@ async function clearMatchCommand(interaction: Discord.CommandInteraction) {
   })
 }
 
-async function checkIfTime(channel: Discord.TextBasedChannel) {
+async function checkIfTime(
+  channel: Discord.GuildTextBasedChannel,
+  everyoneRoleId: string
+) {
   console.log("Checking if time is up...")
 
-  const closeTime = getTime()
+  const closeTime = getDb("closeTime")
+  const deleteChannelsTime = getDb("deleteChannelsTime")
+  const remindChannelsTime = getDb("remindChannelsTime")
 
-  if (closeTime !== 0 && dayjs().unix() > closeTime) {
+  const nowTime = dayjs().unix()
+
+  // If remind time
+  if (remindChannelsTime !== 0 && nowTime > remindChannelsTime) {
+    console.log("Channels remind time!")
+
+    try {
+      await remindChannels(channel.client)
+    } catch (error) {
+      console.error("Failed to remind channels (timer). ", error)
+    }
+  }
+
+  // If delete time
+  if (deleteChannelsTime !== 0 && nowTime > deleteChannelsTime) {
+    console.log("Channels delete time!")
+
+    try {
+      await deleteChannels(channel.client)
+    } catch (error) {
+      console.error("Failed to delete channels (timer). ", error)
+    }
+  }
+
+  // If close time is up
+  if (closeTime !== 0 && nowTime > closeTime) {
     console.log("Time's up! Sending results.")
 
     try {
-      await resultRoutine(channel)
+      await resultRoutine(channel, everyoneRoleId)
     } catch (error) {
       console.error("Failed to send results (timer). ", error)
     }
@@ -292,9 +399,9 @@ async function sendNewMessage(
   })
 
   try {
-    const oldMessageId = getMessageId()
+    const oldMessageId = getDb("messageId")
     if (oldMessageId !== "") {
-      const oldMessage = await channel.messages.fetch(getMessageId())
+      const oldMessage = await channel.messages.fetch(getDb("messageId"))
 
       // Deactivate old message
       await deactivateMessage(oldMessage)
@@ -315,7 +422,8 @@ async function sendNewMessage(
 
 async function sendResultsEarly(
   interaction: Discord.ButtonInteraction,
-  channel: Discord.TextBasedChannel
+  channel: Discord.GuildTextBasedChannel,
+  everyoneRoleId: string
 ) {
   await interaction.update({
     content: "Sending matches to the channel now.",
@@ -323,7 +431,7 @@ async function sendResultsEarly(
   })
 
   try {
-    await resultRoutine(channel)
+    await resultRoutine(channel, everyoneRoleId)
   } catch (error) {
     console.error(error)
 
@@ -338,7 +446,11 @@ async function sendResultsEarly(
 
 /* Exports */
 
-export async function match(client: Discord.Client, channelId: string) {
+export async function match(
+  client: Discord.Client,
+  channelId: string,
+  everyoneRoleId: string
+) {
   const channel = await fetchChannel(client, channelId)
 
   client.on("interactionCreate", (interaction) => {
@@ -371,16 +483,16 @@ export async function match(client: Discord.Client, channelId: string) {
           break
 
         case "force_send_result":
-          sendResultsEarly(interaction, channel)
+          sendResultsEarly(interaction, channel, everyoneRoleId)
           break
       }
     }
   })
 
-  await checkIfTime(channel)
+  await checkIfTime(channel, everyoneRoleId)
 
   setInterval(
-    () => checkIfTime(channel),
+    () => checkIfTime(channel, everyoneRoleId),
     dayjs.duration({ minutes: 5 }).asMilliseconds()
   )
 }
