@@ -9,5 +9,5 @@
     "allowSyntheticDefaultImports": true,
     "allowUnreachableCode": false
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "src2/**/*"]
 }

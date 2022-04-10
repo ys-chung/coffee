@@ -3,16 +3,39 @@ import "dotenv/config"
 import _ from "lodash"
 import Discord from "discord.js"
 
-import { match, matchCommands } from "./commands/match.js"
+import { match, matchCommands } from "./match.js"
 
 function getConfig() {
-  const { TOKEN, GUILD_ID, MOD_ROLE_ID, MATCH_CHANNEL_ID, EVERYONE_ROLE_ID } = process.env
+  const {
+    TOKEN,
+    GUILD_ID,
+    MOD_ROLE_ID,
+    MATCH_CHANNEL_ID,
+    EVERYONE_ROLE_ID,
+    CATEGORY_ID
+  } = process.env
 
-  if (!(TOKEN && GUILD_ID && MOD_ROLE_ID && MATCH_CHANNEL_ID && EVERYONE_ROLE_ID)) {
+  if (
+    !(
+      TOKEN &&
+      GUILD_ID &&
+      MOD_ROLE_ID &&
+      MATCH_CHANNEL_ID &&
+      EVERYONE_ROLE_ID &&
+      CATEGORY_ID
+    )
+  ) {
     throw new Error("Please set all environmental variables.")
   }
 
-  return { TOKEN, GUILD_ID, MOD_ROLE_ID, MATCH_CHANNEL_ID, EVERYONE_ROLE_ID }
+  return {
+    TOKEN,
+    GUILD_ID,
+    MOD_ROLE_ID,
+    MATCH_CHANNEL_ID,
+    EVERYONE_ROLE_ID,
+    CATEGORY_ID
+  }
 }
 
 async function registerCommands(guild: Discord.Guild, modRoleId: string) {
@@ -36,7 +59,14 @@ async function registerCommands(guild: Discord.Guild, modRoleId: string) {
 async function init() {
   console.log("Starting up")
 
-  const { TOKEN, GUILD_ID, MOD_ROLE_ID, MATCH_CHANNEL_ID, EVERYONE_ROLE_ID } = getConfig()
+  const {
+    TOKEN,
+    GUILD_ID,
+    MOD_ROLE_ID,
+    MATCH_CHANNEL_ID,
+    EVERYONE_ROLE_ID,
+    CATEGORY_ID
+  } = getConfig()
 
   const client = new Discord.Client({
     intents: [
@@ -59,7 +89,7 @@ async function init() {
 
   console.log("Commands registered")
 
-  match(client, MATCH_CHANNEL_ID, EVERYONE_ROLE_ID)
+  match(client, MATCH_CHANNEL_ID, EVERYONE_ROLE_ID, CATEGORY_ID)
 
   console.log("Now listening for comamnds")
 }
