@@ -39,21 +39,21 @@ function getConfig() {
 }
 
 async function registerCommands(guild: Discord.Guild, modRoleId: string) {
-  const commands = await guild.commands.set(matchCommands)
-
-  for (const [, command] of commands) {
-    if (command.defaultPermission === false) {
-      await command.permissions.set({
-        permissions: [
-          {
-            id: modRoleId,
-            type: "ROLE",
-            permission: true
-          }
-        ]
-      })
-    }
-  }
+  await guild.commands.set(matchCommands)
+  
+  // for (const [, command] of commands) {
+  //   if (command.defaultPermission === false) {
+  //     await command.permissions.set({
+  //       permissions: [
+  //         {
+  //           id: modRoleId,
+  //           type: "ROLE",
+  //           permission: true
+  //         }
+  //       ]
+  //     })
+  //   }
+  // }
 }
 
 async function init() {

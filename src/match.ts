@@ -16,6 +16,8 @@ import { fetchChannel } from "./util.js"
 import { askCommand, forceAskButton } from "./routines/ask.js"
 import { pairCommand } from "./routines/pair.js"
 import { checkIfTime } from "./routines/interval.js"
+import { nudgeChannels } from "./routines/nudge.js"
+import { fullDb } from "./db.js"
 
 export async function match(
   client: Discord.Client,
@@ -36,6 +38,14 @@ export async function match(
 
         case "match":
           pairCommand(interaction, channel, everyoneRoleId, categoryId)
+          break
+
+        case "nudge":
+          nudgeChannels(client)
+          break
+        
+        case "state":
+          void interaction.reply(JSON.stringify(fullDb))
           break
       }
     }
@@ -61,7 +71,6 @@ export const matchCommands: Discord.ApplicationCommandData[] = [
   {
     name: "weekly",
     description: "Send a message asking people to match",
-    defaultPermission: false,
     options: [
       {
         type: "INTEGER",
@@ -73,7 +82,14 @@ export const matchCommands: Discord.ApplicationCommandData[] = [
   },
   {
     name: "match",
-    description: "Match people now",
-    defaultPermission: false
+    description: "Match people now"
+  },
+  {
+    name: "nudge",
+    description: "Nudge people now"
+  },
+  {
+    name: "state",
+    description: "Print state"
   }
 ]

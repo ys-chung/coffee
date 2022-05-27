@@ -16,7 +16,7 @@ import { getDb, setDb } from "../db.js"
 import { prompt } from "../util.js"
 import { deactivateMessage } from "./pair.js"
 
-async function askRoutine(
+export async function askRoutine(
   channel: Discord.TextBasedChannel,
   customTime?: number
 ) {
@@ -120,5 +120,16 @@ export async function forceAskButton(
       }`,
       components: []
     })
+  }
+}
+
+export async function autoAsk(channel: Discord.GuildTextBasedChannel) {
+  const existingMessageId = getDb("messageId")
+
+  // 1. Check if existing active ask message exists
+  if (existingMessageId !== "") {
+    return
+  } else {
+    await askRoutine(channel)
   }
 }

@@ -145,6 +145,11 @@ export async function pairRoutine(
   // 4. Set time for deleting channels and reminders
   const deleteChannelsTime = dayjs().add(7, "day").subtract(30, "minute").unix()
   const remindChannelsTime = dayjs().add(6, "day").unix()
+  let askTime = dayjs().tz("Asia/Hong_Kong").weekday(4).hour(9).minute(0).second(0)
+
+  if (dayjs().tz("Asia/Hong_Kong").day() > 4) {
+    askTime = askTime.add(7, "day")
+  }
 
   // 5. Send out the pairs
   if (pairs) {
@@ -163,6 +168,7 @@ export async function pairRoutine(
     await setDb("openChannels", channelIds)
     await setDb("deleteChannelsTime", deleteChannelsTime)
     await setDb("remindChannelsTime", remindChannelsTime)
+    await setDb("askTime", askTime.unix())
   }
 
   // 8. Deactivate existing message

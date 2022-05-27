@@ -5,6 +5,7 @@ import { getDb } from "../db.js"
 import { remindChannels } from "./remind.js"
 import { deleteChannels } from "./delete.js"
 import { pairRoutine } from "./pair.js"
+import { autoAsk } from "./ask.js"
 
 export async function checkIfTime(
   channel: Discord.GuildTextBasedChannel,
@@ -16,6 +17,7 @@ export async function checkIfTime(
   const closeTime = getDb("closeTime")
   const deleteChannelsTime = getDb("deleteChannelsTime")
   const remindChannelsTime = getDb("remindChannelsTime")
+  const askTime = getDb("askTime")
 
   const nowTime = dayjs().unix()
 
@@ -49,6 +51,17 @@ export async function checkIfTime(
       await pairRoutine(channel, everyoneRoleId, categoryId)
     } catch (error) {
       console.error("Failed to send results (timer). ", error)
+    }
+  }
+
+  // If it is ask time
+  if (askTime !== 0 && nowTime > askTime) {
+    console.log("Ask time!")
+
+    try {
+      await autoAsk(channel)
+    } catch(error) {
+      console.error("Failed to ask", error)
     }
   }
 }

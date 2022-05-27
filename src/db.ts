@@ -6,6 +6,7 @@ type State = {
   deleteChannelsTime: number
   remindChannelsTime: number
   openChannels: string[]
+  askTime: number
 }
 
 const adapter = new JSONFile<State>("./data/db.json")
@@ -18,7 +19,8 @@ db.data ||= {
   closeTime: 0,
   deleteChannelsTime: 0,
   remindChannelsTime: 0,
-  openChannels: []
+  openChannels: [],
+  askTime: 0
 }
 
 await db.write()
@@ -40,3 +42,5 @@ export async function setDb<K extends keyof State>(
 
   return getDb(property)
 }
+
+export const fullDb = db.data
