@@ -43,9 +43,12 @@ export async function match(
         case "nudge":
           nudgeChannels(client)
           break
-        
+
         case "state":
-          void interaction.reply(JSON.stringify(fullDb))
+          void interaction.reply({
+            content: JSON.stringify(fullDb),
+            ephemeral: true
+          })
           break
       }
     }
